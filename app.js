@@ -13,10 +13,11 @@ app.get('/', (req, res) => {
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const postRoutes = require("./routes/postRoutes");
-
+const commentRoutes = require('./routes/commentRoutes');
 
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/post", postRoutes);
+app.use('/api/comments', commentRoutes);
 
 module.exports = app;

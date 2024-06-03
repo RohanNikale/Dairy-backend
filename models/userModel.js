@@ -7,6 +7,10 @@ const userSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
+        username:{
+            type: String,
+            unique: true,
+        },
         email: {
             type: String,
         },
@@ -26,6 +30,7 @@ const userSchema = new mongoose.Schema(
         password: {
             type: String,
         },
+        emailVerified: { type: Boolean, default: false },
         otp: {
             type: String,
         },

@@ -9,7 +9,7 @@ const otpExpirationDuration = 2 * 60 * 1000;
 
 async function signUp(req, res) {
     try {
-        const { email, password } = req.body;
+        const { username,name, email, password } = req.body;
 
         if (!email || !password) {
             throw Error("Please provide an email address and password");
@@ -18,8 +18,11 @@ async function signUp(req, res) {
         // Check if the email already exists
         let user = await User.findOne({ email });
 
-        if (user) {
+        if (user && user.emailVerified) {
             throw Error("Email already exists, please log in instead");
+        }
+        if (user && !user.emailVerified) {
+            await User.findOneAndDelete({ email });
         }
 
         // Generate OTP for email verification
@@ -28,6 +31,8 @@ async function signUp(req, res) {
 
         // Save user with email, hashed password, and OTP details
         user = await User.create({
+            username,
+            name,
             email,
             password: await hash(password),
             otp: hashedOtp,
@@ -49,6 +54,41 @@ async function signUp(req, res) {
         });
     }
 }
+async function checkUsername(req, res) {
+    try {
+        const { username } = req.body;
+
+        // Validate the username
+        const usernameRegex = /^[a-zA-Z0-9_]+$/;
+        if (!username || !usernameRegex.test(username)) {
+            return res.status(400).json({
+                message: "Invalid username. Only alphanumeric characters and underscores are allowed.",
+                success: false
+            });
+        }
+
+        const user = await User.findOne({ username });
+        if (user) {
+            return res.status(400).json({
+                message: "Username is already taken",
+                success: false
+            });
+        }
+
+        return res.status(200).json({
+            message: "Username is available",
+            success: true
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            message: "Error while checking username",
+            success: false
+        });
+    }
+}
+
+module.exports = { signUp, verifyEmail, login, checkUsername };
 
 async function verifyEmail(req, res) {
     try {
@@ -72,21 +112,27 @@ async function verifyEmail(req, res) {
 
         const otpIsValid = await compareHash(String(otp), user.otp);
 
+        // Check if OTP is valid and has not expired
         if (!otpIsValid || user.otpExpiration < Date.now()) {
             return res.status(400).json({
-                message: "The OTP you provided is invalid, used, or expired",
+                message: "The OTP you provided is invalid, used, or expired.",
                 success: false
             });
         }
 
-        // Clear OTP fields after successful verification
+        // Clear OTP fields and set emailVerified to true after successful verification
         user.otp = "";
         user.otpExpiration = "";
+        user.emailVerified = true;
         await user.save();
+
+        // Generate JWT token for authenticated session
+        const token = genToken(user);
 
         return res.status(200).json({
             message: "Email verification successful",
-            success: true
+            success: true,
+            token
         });
     } catch (error) {
         console.log(error);
@@ -109,7 +155,12 @@ async function login(req, res) {
         const user = await User.findOne({ email });
 
         if (!user) {
-            throw Error("User not found with provided email address");
+            throw Error("User not found with provided email address. Please sign up and verify your email.");
+        }
+
+        // Check if the user's email is verified
+        if (!user.emailVerified) {
+            throw Error("Email not verified. Please verify your email to log in.");
         }
 
         // Check if password is correct
@@ -130,10 +181,10 @@ async function login(req, res) {
     } catch (error) {
         console.log(error);
         return res.status(401).json({
-            message: "Authentication failed",
+            message: error.message || "Authentication failed",
             success: false
         });
     }
 }
 
-module.exports = { signUp, verifyEmail, login };
+module.exports = { signUp, verifyEmail, login,checkUsername };
