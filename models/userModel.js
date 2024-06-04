@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
-        username:{
+        username: {
             type: String,
             unique: true,
         },
@@ -37,10 +37,29 @@ const userSchema = new mongoose.Schema(
         otpExpiration: {
             type: Date,
         },
-
         otpTime: {
             type: Date,
         },
+        followers: [
+            {
+                userId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'user',
+                },
+                name: String,
+                username: String,
+            }
+        ],
+        following: [
+            {
+                userId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'user',
+                },
+                name: String,
+                username: String,
+            }
+        ],
     },
     { timestamps: true }
 );
@@ -51,6 +70,6 @@ userSchema.methods.getJWTToken = function () {
     });
 };
 
-const user = mongoose.model("user", userSchema);
+const user = mongoose.model('user', userSchema);
 
 module.exports = user;

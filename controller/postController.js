@@ -128,7 +128,7 @@ exports.getPostsByType = async (req, res) => {
         const totalPosts = await Post.countDocuments({ type: sanitizedType });
 
         if (posts.length === 0) {
-            return res.status(404).json({ message: 'No posts found for this type' });
+            return res.status(404).json({status:false,message: 'No posts found for this type' });
         }
         res.status(200).json({
             message: 'Posts fetched successfully',
