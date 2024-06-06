@@ -3,63 +3,18 @@ const jwt = require('jsonwebtoken');
 
 const userSchema = new mongoose.Schema(
     {
-        name: {
-            type: String,
-            trim: true,
-        },
-        username: {
-            type: String,
-            unique: true,
-        },
-        email: {
-            type: String,
-        },
-        adminAccess: {
-            type: Boolean,
-        },
-        profilePic: {
-            type: String,
-        },
-        gender: {
-            type: String,
-            enum: ['male', 'female', 'other'],
-        },
-        phoneno: {
-            type: String,
-        },
-        password: {
-            type: String,
-        },
+        name: { type: String, trim: true },
+        username: { type: String, unique: true },
+        email: { type: String },
+        adminAccess: { type: Boolean },
+        profilePic: { type: String },
+        gender: { type: String, enum: ['male', 'female', 'other'] },
+        phoneno: { type: String },
+        password: { type: String },
         emailVerified: { type: Boolean, default: false },
-        otp: {
-            type: String,
-        },
-        otpExpiration: {
-            type: Date,
-        },
-        otpTime: {
-            type: Date,
-        },
-        followers: [
-            {
-                userId: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'user',
-                },
-                name: String,
-                username: String,
-            }
-        ],
-        following: [
-            {
-                userId: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'user',
-                },
-                name: String,
-                username: String,
-            }
-        ],
+        otp: { type: String },
+        otpExpiration: { type: Date },
+        otpTime: { type: Date },
     },
     { timestamps: true }
 );
@@ -70,6 +25,6 @@ userSchema.methods.getJWTToken = function () {
     });
 };
 
-const user = mongoose.model('user', userSchema);
+const User = mongoose.model('User', userSchema);
 
-module.exports = user;
+module.exports = User;

@@ -8,7 +8,7 @@ const sanitizeInput = (input) => {
     return sanitize(input, {
         allowedTags: false,
         disallowedTagsMode: 'discard',
-        disallowedTags: ['script'],
+        disallowedTags: ['script','style'],
         allowedAttributes: false,
     });
 };
@@ -19,8 +19,7 @@ exports.createComment = async (req, res) => {
         const userId = req.user.id;
         const sanitizedContent = sanitizeInput(req.body.content);
         const comment = new Comment({
-            username:req.user.username,
-            name:req.user.name,
+
             postId: req.body.postId,
             content: sanitizedContent,
             userId
@@ -40,8 +39,7 @@ exports.getComments = async (req, res) => {
         const comments = await Comment.find({ postId })
             .sort({ createdAt: -1 }) // Sort in descending order by createdAt timestamp
             .skip((page - 1) * limit)
-            .limit(parseInt(limit));
-
+            .limit(parseInt(limit)).populate('userId');
         res.status(200).json({ message: 'Comments fetched successfully', comments });
     } catch (error) {
         console.error('Error fetching comments:', error);
@@ -98,15 +96,15 @@ exports.createReply = async (req, res) => {
         const commentId = req.params.commentId;
         const sanitizedContent = sanitizeInput(req.body.content);
 
-        const comment = await Comment.findById(commentId);
+        const comment = await Comment.findById(commentId)
 
-        if (!comment) {
+            if (!comment) {
             return res.status(404).json({ message: 'Comment not found' });
         }
 
         const reply = {
-            name:req.user.name,
-            username:req.user.username,
+            name: req.user.name,
+            username: req.user.username,
             content: sanitizedContent,
             userId
         };
@@ -125,13 +123,13 @@ exports.getReplies = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
         const { commentId } = req.params;
-        const comment = await Comment.findById(commentId);
+        const comment = await Comment.findById(commentId).populate('replies.userId',"name username")
 
         if (!comment) {
             return res.status(404).json({ message: 'Comment not found' });
         }
 
-        const sortedReplies = comment.replies.slice().reverse(); // Reverse the array of replies
+        const sortedReplies = comment.replies.slice().reverse() // Reverse the array of replies
 
         const replies = sortedReplies.slice((page - 1) * limit, page * limit);
 

@@ -1,34 +1,36 @@
 const Post = require('../models/postModel');
+const Like = require('../models/likeModel');
 const sanitize = require('sanitize-html'); // For input sanitization
 
 // Sanitization function
 const sanitizeInput = (input) => {
     return sanitize(input, {
-        allowedTags: false, 
+        allowedTags: false,
         disallowedTagsMode: 'discard',
-        disallowedTags: ['script','style'], 
-        allowedAttributes: false, 
+        disallowedTags: ['script', 'style'],
+        allowedAttributes: false,
     });
 };
 
 // Create a new post
 exports.createPost = async (req, res) => {
     try {
-        const userId = req.user.id; // Extract user ID from middleware
-        const username = req.user.username; // Extract username from middleware
+        const userId = req.params.userId; // Extract user ID from params
+        const username = req.user.username; // Extract username from middleware (if needed)
         const sanitizedContent = sanitizeInput(req.body.content); // Sanitize the post content
         const sanitizedTitle = sanitizeInput(req.body.title); // Sanitize the title
         const sanitizedType = sanitizeInput(req.body.type); // Sanitize the type
 
-        const post = new Post({ 
-            ...req.body, 
-            content: sanitizedContent, 
-            title: sanitizedTitle, 
-            type: sanitizedType, 
-            userId, 
+        const post = new Post({
+            ...req.body,
+            content: sanitizedContent,
+            title: sanitizedTitle,
+            type: sanitizedType,
+            userId,
             author: req.user.name,
-            username
-        }); // Include userId
+            username,
+            likes: [] // Initialize likes as an empty array
+        });
 
         await post.save();
         res.status(201).json({ message: 'Post created successfully', post });
@@ -37,76 +39,31 @@ exports.createPost = async (req, res) => {
     }
 };
 
-
-exports.toggleLike = async (req, res) => {
-    const { postId } = req.params;
-    const userId = req.user.id;
-    const { name, username } = req.user;
-  
-    try {
-      const post = await Post.findById(postId);
-      if (!post) {
-        return res.status(404).json({ message: 'Post not found' });
-      }
-  
-      // Check if the user already liked the post
-      const likeIndex = post.likes.findIndex(like => like.userId.toString() === userId);
-  
-      if (likeIndex > -1) {
-        // Unlike the post
-        post.likes.splice(likeIndex, 1);
-      } else {
-        // Like the post
-        post.likes.push({ userId, name, username });
-      }
-  
-      await post.save();
-  
-      res.json({ message: likeIndex > -1 ? 'Post unliked' : 'Post liked' });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  };
-exports.getLikesCount=async(req, res)=> {
-    try {
-        const { postId } = req.params;
-
-        const post = await Post.findById(postId);
-        if (!post) {
-            return res.status(404).json({
-                message: "Post not found",
-                success: false
-            });
-        }
-
-        const likesCount = post.likes.length;
-
-        return res.status(200).json({
-            likesCount
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            message: "Error while fetching likes count",
-            success: false
-        });
-    }
-}
-
-
 // Get all posts with pagination
 exports.getAllPosts = async (req, res) => {
     try {
-        const { page = 1, limit = 10 } = req.query; // Extract page and limit from query parameters
+        const { page = 1, limit = 10 } = req.query;
+        const userId = req.user ? req.user._id : null;
+
         const posts = await Post.find()
             .skip((page - 1) * limit)
             .limit(parseInt(limit));
         const totalPosts = await Post.countDocuments();
 
+        const postList = await Promise.all(posts.map(async post => {
+            const postObj = post.toObject();
+            if (userId) {
+                const like = await Like.findOne({ postId: post._id, userId:userId });
+                postObj.liked = !!like;
+            } else {
+                postObj.liked = false;
+            }
+            return postObj;
+        }));
+
         res.status(200).json({
             message: 'Posts fetched successfully',
-            posts,
+            posts: postList,
             currentPage: parseInt(page),
             totalPages: Math.ceil(totalPosts / limit)
         });
@@ -118,37 +75,58 @@ exports.getAllPosts = async (req, res) => {
 // Get posts by type with pagination
 exports.getPostsByType = async (req, res) => {
     try {
-        const { type } = req.params; // Extract type from URL parameters
-        const { page = 1, limit = 10 } = req.query; // Extract page and limit from query parameters
-        const sanitizedType = sanitizeInput(type); // Sanitize the type input
+        const { type } = req.params; // Extract user ID from params
+        const { page = 1, limit = 10 } = req.query;
+        const userId = req.user ? req.user._id : null;
 
+        const sanitizedType = sanitizeInput(type);
+        const skip = (page - 1) * limit;
         const posts = await Post.find({ type: sanitizedType })
-            .skip((page - 1) * limit)
+            .skip(skip)
             .limit(parseInt(limit));
         const totalPosts = await Post.countDocuments({ type: sanitizedType });
 
+        const hasMore = (skip + posts.length) < totalPosts;
+
         if (posts.length === 0) {
-            return res.status(404).json({status:false,message: 'No posts found for this type' });
+            return res.status(404).json({ status: false, message: 'No posts found for this type' });
         }
+
+        const postList = await Promise.all(posts.map(async post => {
+            const postObj = post.toObject();
+            if (userId) {
+                const like = await Like.findOne({ postId: post._id, userId:userId });
+                postObj.liked = !!like;
+            } else {
+                postObj.liked = false;
+            }
+            return postObj;
+        }));
+
         res.status(200).json({
             message: 'Posts fetched successfully',
-            posts,
+            posts: postList,
             currentPage: parseInt(page),
-            totalPages: Math.ceil(totalPosts / limit)
+            totalPages: Math.ceil(totalPosts / limit),
+            hasMore
         });
     } catch (error) {
         res.status(500).json({ message: 'Error fetching posts by type', error: error.message });
     }
 };
 
-// Get a single post by ID
+// Get a single post by ID with like status
 exports.getPostById = async (req, res) => {
     try {
         const post = await Post.findById(req.params.id);
         if (!post) {
             return res.status(404).json({ message: 'Post not found' });
         }
-        res.status(200).json({ message: 'Post fetched successfully', post });
+
+        const userId = req.params.userId; // Extract user ID from params
+        const liked = userId ? post.likes.some(like => like.userId.toString() === userId) : false;
+
+        res.status(200).json({ message: 'Post fetched successfully', post, liked });
     } catch (error) {
         res.status(500).json({ message: 'Error fetching post', error: error.message });
     }
@@ -157,14 +135,14 @@ exports.getPostById = async (req, res) => {
 // Update a post by ID
 exports.updatePostById = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.params.userId; // Extract user ID from params
         const postId = req.params.id;
-        const sanitizedContent = sanitizeInput(req.body.content); // Sanitize the post content
-        const sanitizedTitle = sanitizeInput(req.body.title); // Sanitize the title
-        const sanitizedType = sanitizeInput(req.body.type); // Sanitize the type
+        const sanitizedContent = sanitizeInput(req.body.content);
+        const sanitizedTitle = sanitizeInput(req.body.title);
+        const sanitizedType = sanitizeInput(req.body.type);
 
         const post = await Post.findOneAndUpdate(
-            { _id: postId, userId }, // Match post ID and user ID
+            { _id: postId, userId },
             { ...req.body, content: sanitizedContent, title: sanitizedTitle, type: sanitizedType },
             { new: true, runValidators: true }
         );
@@ -182,7 +160,7 @@ exports.updatePostById = async (req, res) => {
 // Delete a post by ID
 exports.deletePostById = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.params.userId; // Extract user ID from params
         const postId = req.params.id;
 
         const post = await Post.findOneAndDelete({ _id: postId, userId });
