@@ -9,14 +9,6 @@ const PostSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    author: {
-        type: String,
-        required: true
-    },
-    username:{
-        type: String,
-        required: true
-    },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -25,6 +17,9 @@ const PostSchema = new mongoose.Schema({
     type: {
         type: String
     },
+    tags: [{
+        type: String
+    }],
     createdAt: {
         type: Date,
         default: Date.now

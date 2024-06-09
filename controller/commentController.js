@@ -1,6 +1,7 @@
 // controllers/commentController.js
 
 const Comment = require('../models/commentModel');
+const Reply = require('../models/replyModel');
 const sanitize = require('sanitize-html'); // For input sanitization
 
 // Sanitization function
@@ -8,7 +9,7 @@ const sanitizeInput = (input) => {
     return sanitize(input, {
         allowedTags: false,
         disallowedTagsMode: 'discard',
-        disallowedTags: ['script','style'],
+        disallowedTags: ['script', 'style'],
         allowedAttributes: false,
     });
 };
@@ -19,7 +20,6 @@ exports.createComment = async (req, res) => {
         const userId = req.user.id;
         const sanitizedContent = sanitizeInput(req.body.content);
         const comment = new Comment({
-
             postId: req.body.postId,
             content: sanitizedContent,
             userId
@@ -39,14 +39,15 @@ exports.getComments = async (req, res) => {
         const comments = await Comment.find({ postId })
             .sort({ createdAt: -1 }) // Sort in descending order by createdAt timestamp
             .skip((page - 1) * limit)
-            .limit(parseInt(limit)).populate('userId');
+            .limit(parseInt(limit))
+            .populate('userId', 'name username'); // Populate user information for the comment
+
         res.status(200).json({ message: 'Comments fetched successfully', comments });
     } catch (error) {
         console.error('Error fetching comments:', error);
         res.status(500).json({ message: 'Error fetching comments', error: error.message });
     }
 };
-
 
 // Update a comment
 exports.updateComment = async (req, res) => {
@@ -77,15 +78,18 @@ exports.deleteComment = async (req, res) => {
         const userId = req.user.id;
         const commentId = req.params.id;
 
-        const comment = await Comment.findOneAndDelete({ _id: commentId, userId });
+        const comment = await Comment.findOne({ _id: commentId, userId });
 
         if (!comment) {
             return res.status(404).json({ message: 'Comment not found or unauthorized delete' });
         }
 
-        res.status(200).json({ message: 'Comment deleted successfully' });
+        await comment.deleteOne();
+        await Reply.deleteMany({commentId}) // Trigger the pre-remove hook to delete associated replies
+
+        res.status(200).json({ message: 'Comment and its replies deleted successfully' });
     } catch (error) {
-        res.status500().json({ message: 'Error deleting comment', error: error.message });
+        res.status(500).json({ message: 'Error deleting comment', error: error.message });
     }
 };
 
@@ -96,23 +100,20 @@ exports.createReply = async (req, res) => {
         const commentId = req.params.commentId;
         const sanitizedContent = sanitizeInput(req.body.content);
 
-        const comment = await Comment.findById(commentId)
+        const comment = await Comment.findById(commentId);
 
-            if (!comment) {
+        if (!comment) {
             return res.status(404).json({ message: 'Comment not found' });
         }
 
-        const reply = {
-            name: req.user.name,
-            username: req.user.username,
+        const reply = new Reply({
+            commentId,
             content: sanitizedContent,
             userId
-        };
+        });
+        await reply.save();
 
-        comment.replies.push(reply);
-        await comment.save();
-
-        res.status(201).json({ message: 'Reply added successfully', comment });
+        res.status(201).json({ message: 'Reply added successfully', reply });
     } catch (error) {
         res.status(500).json({ message: 'Error creating reply', error: error.message });
     }
@@ -123,42 +124,46 @@ exports.getReplies = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
         const { commentId } = req.params;
-        const comment = await Comment.findById(commentId).populate('replies.userId',"name username")
+
+        const comment = await Comment.findById(commentId);
 
         if (!comment) {
             return res.status(404).json({ message: 'Comment not found' });
         }
 
-        const sortedReplies = comment.replies.slice().reverse() // Reverse the array of replies
+        const replies = await Reply.find({ commentId })
+            .sort({ createdAt: -1 }) // Sort in descending order by createdAt timestamp
+            .skip((page - 1) * limit)
+            .limit(parseInt(limit))
+            .populate('userId', 'name username'); // Populate user information for the reply
 
-        const replies = sortedReplies.slice((page - 1) * limit, page * limit);
+        const totalReplies = await Reply.countDocuments({ commentId });
+        const hasMore = (page * limit) < totalReplies;
 
-        res.status(200).json({ message: 'Replies fetched successfully', replies });
+        res.status(200).json({ message: 'Replies fetched successfully', replies, hasMore });
     } catch (error) {
         res.status(500).json({ message: 'Error fetching replies', error: error.message });
     }
 };
 
-
 // Update a reply
 exports.updateReply = async (req, res) => {
     try {
         const userId = req.user.id;
-        const commentId = req.params.commentId;
         const replyId = req.params.replyId;
         const sanitizedContent = sanitizeInput(req.body.content);
 
-        const comment = await Comment.findOneAndUpdate(
-            { _id: commentId, 'replies._id': replyId, 'replies.userId': userId },
-            { $set: { 'replies.$.content': sanitizedContent } },
+        const reply = await Reply.findOneAndUpdate(
+            { _id: replyId, userId },
+            { content: sanitizedContent },
             { new: true, runValidators: true }
         );
 
-        if (!comment) {
+        if (!reply) {
             return res.status(404).json({ message: 'Reply not found or unauthorized update' });
         }
 
-        res.status(200).json({ message: 'Reply updated successfully', comment });
+        res.status(200).json({ message: 'Reply updated successfully', reply });
     } catch (error) {
         res.status(500).json({ message: 'Error updating reply', error: error.message });
     }
@@ -168,20 +173,15 @@ exports.updateReply = async (req, res) => {
 exports.deleteReply = async (req, res) => {
     try {
         const userId = req.user.id;
-        const commentId = req.params.commentId;
         const replyId = req.params.replyId;
 
-        const comment = await Comment.findOneAndUpdate(
-            { _id: commentId, 'replies._id': replyId, 'replies.userId': userId },
-            { $pull: { replies: { _id: replyId } } },
-            { new: true }
-        );
+        const reply = await Reply.findOneAndDelete({ _id: replyId, userId });
 
-        if (!comment) {
+        if (!reply) {
             return res.status(404).json({ message: 'Reply not found or unauthorized delete' });
         }
 
-        res.status(200).json({ message: 'Reply deleted successfully', comment });
+        res.status(200).json({ message: 'Reply deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Error deleting reply', error: error.message });
     }

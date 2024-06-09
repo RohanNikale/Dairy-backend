@@ -28,10 +28,10 @@ async function signUp(req, res) {
         // Generate OTP for email verification
         const otp = generateOtp();
         const hashedOtp = await hash(otp);
-
+        const lowercase=username.toLowerCase()
         // Save user with email, hashed password, and OTP details
         user = await User.create({
-            username,
+            username:lowercase,
             name,
             email,
             password: await hash(password),
@@ -68,6 +68,14 @@ async function checkUsername(req, res) {
         }
 
         const user = await User.findOne({ username });
+        if(user){
+            if(!user.emailVerified){
+                return res.status(200).json({
+                    message: "Username is available",
+                    success: true
+                });
+            }
+        }
         if (user) {
             return res.status(400).json({
                 message: "Username is already taken",
