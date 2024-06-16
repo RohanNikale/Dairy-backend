@@ -1,10 +1,11 @@
 const User = require('../models/userModel');
+const Post = require('../models/postModel');
 const Follow = require('../models/followModel');
 const { hash } = require('../utils/hash');
 
 async function updateUser(req, res) {
     try {
-        const { name,username, email, bio, gender } = req.body;
+        const { name, username, email, bio, gender } = req.body;
         let { password } = req.body;
 
         if (password) {
@@ -106,37 +107,56 @@ const getUserById = async (req, res) => {
     }
 };
 
-
-const searchUserProfiles = async (req, res) => {
+const searchUserAndPosts = async (req, res) => {
     try {
-        const { query } = req.query; // Get the search query from the request
+        const { query, page = 1 } = req.query; // Get the search query and page number from the request
+        const limit = 10; // Limit to 10 users and 10 posts per request
+        const skip = (page - 1) * limit; // Calculate the number of documents to skip
 
         if (!query) {
             return res.status(400).json({ message: 'Search query is required' });
         }
 
         const userId = req.user ? req.user._id : null;
-        const users = await User.find({
+
+        const usersPromise = User.find({
             _id: { $ne: userId }, // Exclude the current user from the search results
             $or: [
                 { name: { $regex: query, $options: 'i' } },
-                { name: { $regex: query, $options: 'i' } },
-                { email: { $regex: query, $options: 'i' } }
+                { username: { $regex: query, $options: 'i' } },
+                { email: { $regex: query, $options: 'i' } },
+                { interests: { $regex: query, $options: 'i' } }
             ]
-        }).select('-password -email -otp -gender'); // Exclude password field from the response
+        }).select('-password -email -otp -gender') // Exclude sensitive fields from the response
+          .skip(skip)
+          .limit(limit);
+
+        const postsPromise = Post.find({
+            $or: [
+                { title: { $regex: query, $options: 'i' } },
+                { content: { $regex: query, $options: 'i' } },
+                { type: { $regex: query, $options: 'i' } },
+                { tags: { $regex: query, $options: 'i' } }
+            ]
+        }).populate('userId', '-password -email -otp -gender') // Populate userId field and exclude sensitive data
+          .skip(skip)
+          .limit(limit);
+
+        const [users, posts] = await Promise.all([usersPromise, postsPromise]);
 
         res.status(200).json({
             success: true,
-            message: "Users retrieved successfully.",
+            message: "Users and posts retrieved successfully.",
             users,
+            posts,
         });
     } catch (error) {
-        console.error("Error searching users:", error);
+        console.error("Error searching users and posts:", error);
         res.status(500).json({
             success: false,
-            message: "Error while searching users.",
+            message: "Error while searching users and posts.",
         });
     }
 };
 
-module.exports = { updateUser, getUser, getAllUsers, getUserById, updateInterests, searchUserProfiles };
+module.exports = { updateUser, getUser, getAllUsers, getUserById, updateInterests, searchUserAndPosts };
