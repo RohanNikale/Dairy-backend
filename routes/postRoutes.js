@@ -28,7 +28,7 @@ router.get("/getPostsbytype/:type", isAuthenticatedUser, getPostsByType);
 router.get("/recommended", verifyToken, getRecommendedPosts);
 
 // Get a specific post by ID
-router.get("/getpost/:id", getPostById);
+router.get("/getpost/:id",verifyToken, getPostById);
 
 // Update a post by ID
 router.put("/update/:id", isAuthenticatedUser, updatePostById);
